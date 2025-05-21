@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NASA Logs Billing Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+    <!-- Production Tailwind CSS -->
+    <link href="/static/dist/styles.css" rel="stylesheet">
+    <link rel="icon" href="data:,">
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold">NASA Logs Billing Dashboard</h1>
+            <div class="text-sm text-gray-600">
+                Data available: Aug 1 - Aug 31, 1995
+            </div>
+        </div>
+        
+        <!-- Date Range Selection -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-xl font-semibold mb-4">Select Date Range</h2>
+            <div class="flex gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Start Date</label>
+                    <input type="date" id="startDate" 
+                           min="{{ start_date }}" max="{{ end_date }}" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">End Date</label>
+                    <input type="date" id="endDate" 
+                           min="{{ start_date }}" max="{{ end_date }}"
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                </div>
+                <div class="flex items-end">
+                    <button onclick="fetchData()" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600">
+                        Generate Invoice
+                    </button>
+                </div>
+            </div>
+            <!-- Error message container -->
+            <div id="errorMessage" class="hidden text-red-600 text-sm mt-2"></div>
+        </div>
+
+        <!-- Usage Chart -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-xl font-semibold mb-4">Credits Usage Over Time</h2>
+            <div id="usageChart" style="height: 400px;"></div>
+        </div>
+
+        <!-- Invoice Summary -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-4">Current Invoice</h2>
+            <div id="invoiceSummary" class="grid grid-cols-2 gap-4">
+                <div>
+                    <p class="text-sm text-gray-600">Customer ID</p>
+                    <p id="customerId" class="text-lg font-medium">-</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-600">Period</p>
+                    <p id="period" class="text-lg font-medium">-</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-600">Total Credits</p>
+                    <p id="totalCredits" class="text-lg font-medium">-</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-600">Amount Due (USD)</p>
+                    <p id="amountDue" class="text-lg font-medium">-</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Add event listeners for date validation
+        document.getElementById('startDate').addEventListener('change', validateDates);
+        document.getElementById('endDate').addEventListener('change', validateDates);
+
+        function validateDates() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            if (startDate && endDate && startDate > endDate) {
+                showError('End date must be after start date');
+                document.getElementById('endDate').value = startDate;
+                return false;
+            }
+            
+            // Clear any error messages if dates are valid
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.classList.add('hidden');
+            return true;
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+            setTimeout(() => {
+                errorDiv.classList.add('hidden');
+            }, 5000);
+        }
+
+        async function fetchData() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            if (!startDate || !endDate) {
+                showError('Please select both start and end dates');
+                return;
+            }
+
+            if (!validateDates()) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/usage?start=${startDate}&end=${endDate}`);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                if (!data.usage_data || !data.invoice) {
+                    throw new Error('Invalid data format received');
+                }
+                
+                updateChart(data.usage_data);
+                updateInvoice(data.invoice);
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                showError(error.message || 'Error fetching data. Please try again.');
+            }
+        }
+
+        function updateChart(usageData) {
+            if (!Array.isArray(usageData) || !usageData.length) {
+                console.warn('No usage data available for the selected period');
+                Plotly.newPlot('usageChart', [{
+                    x: [],
+                    y: [],
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Credits Used'
+                }], {
+                    title: 'Daily Credits Usage (No Data Available)',
+                    xaxis: { title: 'Date' },
+                    yaxis: { title: 'Credits Used' }
+                });
+                return;
+            }
+
+            const dates = usageData.map(d => d.date);
+            const credits = usageData.map(d => d.credits);
+            
+            const trace = {
+                x: dates,
+                y: credits,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Credits Used',
+                hovertemplate: '%{x}<br>Credits: %{y:,.0f}<extra></extra>',
+                line: {
+                    color: 'rgb(59, 130, 246)',
+                    width: 2
+                },
+                marker: {
+                    size: 6
+                }
+            };
+            
+            const layout = {
+                title: 'Daily Credits Usage',
+                xaxis: {
+                    title: 'Date',
+                    type: 'date',
+                    tickformat: '%b %d',
+                    tickangle: -45,
+                    showgrid: true,
+                    gridcolor: 'rgba(0,0,0,0.1)'
+                },
+                yaxis: {
+                    title: 'Credits Used',
+                    showgrid: true,
+                    gridcolor: 'rgba(0,0,0,0.1)',
+                    tickformat: ',.0f'
+                },
+                margin: {
+                    l: 60,
+                    r: 40,
+                    b: 80,
+                    t: 40,
+                    pad: 4
+                },
+                plot_bgcolor: 'white',
+                paper_bgcolor: 'white',
+                showlegend: false,
+                hovermode: 'x unified'
+            };
+            
+            const config = {
+                responsive: true,
+                displayModeBar: false
+            };
+            
+            Plotly.newPlot('usageChart', [trace], layout, config);
+        }
+
+        function updateInvoice(invoice) {
+            document.getElementById('customerId').textContent = invoice.customer_id;
+            document.getElementById('period').textContent = `${invoice.period_start} to ${invoice.period_end}`;
+            document.getElementById('totalCredits').textContent = invoice.total_credits.toLocaleString();
+            document.getElementById('amountDue').textContent = `$${invoice.amount_due_usd.toFixed(2)}`;
+        }
+
+        // Set initial dates from server-provided range
+        window.onload = function() {
+            const startDate = "{{ start_date }}";
+            const endDate = "{{ end_date }}";
+            document.getElementById('startDate').value = startDate;
+            document.getElementById('endDate').value = endDate;
+            fetchData();
+        };
+    </script>
+</body>
+</html> 

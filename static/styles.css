@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles */
+.input-field {
+    @apply mt-1 block w-full rounded-md border-gray-300 shadow-sm;
+}
+
+.btn-primary {
+    @apply bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600;
+}
+
+.card {
+    @apply bg-white p-6 rounded-lg shadow-md;
+}
+
+.card-title {
+    @apply text-xl font-semibold mb-4;
+}
+
+.text-label {
+    @apply block text-sm font-medium text-gray-700;
+} 
